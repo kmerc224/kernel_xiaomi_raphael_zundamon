@@ -71,7 +71,8 @@ jobs:
 
           echo ""
           echo "=== Step 4: make kernel ==="
-          make O=out ARCH=arm64 -j$(nproc) 2>&1 | tee build.log
+          # Clang 22 treats designated-init warnings as errors; Xiaomi's rdbg.c needs this relaxed
+          make O=out ARCH=arm64 -j$(nproc) KCFLAGS="-Wno-error=designated-init" 2>&1 | tee build.log
 
           echo ""
           echo "=== Build result ==="
