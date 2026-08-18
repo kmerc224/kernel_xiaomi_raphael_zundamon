@@ -1,0 +1,84 @@
+name: Build LineageOS SM8150 Kernel (Zundamon Base)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout LineageOS SM8150 kernel
+        uses: actions/checkout@v4
+        with:
+          repository: LineageOS/android_kernel_qcom_sm8150
+          ref: lineage-20
+          path: kernel
+
+      - name: Checkout workflow repo (config)
+        uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: Setup AOSP Clang 22.0.0 (r522817)
+        run: |
+          mkdir -p clang
+          cd clang
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522817.tar.gz
+          if [ $? -ne 0 ]; then
+            echo "GoogleSource failed, trying mirror..."
+            wget -q https://github.com/7felix7/android_prebuilts_clang_host_linux-x86_clang-r522817/archive/refs/heads/main.tar.gz -O clang-r522817.tar.gz
+          fi
+          tar xf clang-r522817.tar.gz
+          rm -f clang-r522817.tar.gz
+          echo "Clang version:"
+          ./bin/clang --version
+
+      - name: Install cross-compilers
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+
+      - name: Setup defconfig
+        run: |
+          cp repo/kernel_config.txt kernel/arch/arm64/configs/vendor/raphael_defconfig
+          echo "Defconfig copied, line count: $(wc -l < kernel/arch/arm64/configs/vendor/raphael_defconfig)"
+
+      - name: Build kernel
+        run: |
+          cd kernel
+          export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+
+          echo "=== Step 1: make defconfig ==="
+          make O=out ARCH=arm64 vendor/raphael_defconfig
+
+          echo "=== Step 2: make olddefconfig (update for 4.14.35x) ==="
+          make O=out ARCH=arm64 olddefconfig
+
+          echo "=== Step 3: make kernel ==="
+          make O=out ARCH=arm64 -j$(nproc) 2>&1 | tee build.log
+
+          echo "=== Build result ==="
+          if [ -f out/arch/arm64/boot/Image ]; then
+            echo "✓ Image built successfully"
+            ls -lh out/arch/arm64/boot/Image*
+          else
+            echo "✗ Image not found, checking for errors..."
+            tail -50 build.log
+            exit 1
+          fi
+
+      - name: Upload kernel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-zundamon-base
+          path: |
+            kernel/out/arch/arm64/boot/Image*
+            kernel/out/arch/arm64/boot/dts/qcom/*.dtb
+            kernel/out/arch/arm64/boot/dtbo.img
+            kernel/out/**/*.ko
+            kernel/build.log
+            kernel/out/.config
