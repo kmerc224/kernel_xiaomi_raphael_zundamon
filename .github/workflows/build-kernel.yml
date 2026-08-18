@@ -63,14 +63,23 @@ jobs:
           make O=out ARCH=arm64 olddefconfig 2>&1 | tail -20
 
           echo ""
-          echo "=== Step 3: Verify key MIUI/HyperOS options ==="
+          echo "=== Step 3: Enable Xiaomi/MIUI specific options ==="
+          # Zundamon config (from LineageOS) doesn't have these; enable them manually
+          ./scripts/config --file out/.config \
+            -e MACH_XIAOMI \
+            -e MACH_XIAOMI_SM8150 \
+            -e MACH_XIAOMI_RAPHAEL
+          make O=out ARCH=arm64 olddefconfig 2>&1 | tail -5
+
+          echo ""
+          echo "=== Step 4: Verify key MIUI/HyperOS options ==="
           for opt in MACH_XIAOMI MACH_XIAOMI_RAPHAEL TOUCHSCREEN_XIAOMI_TOUCHFEATURE TOUCHSCREEN_GOODIX_GTX8 FINGERPRINT_GOODIX_TA NFC_NQ; do
             val=$(grep "CONFIG_${opt}=" out/.config || echo "NOT SET")
             echo "  CONFIG_${opt}: ${val}"
           done
 
           echo ""
-          echo "=== Step 4: make kernel ==="
+          echo "=== Step 5: make kernel ==="
           # Clang 22 treats designated-init warnings as errors; Xiaomi's rdbg.c needs this relaxed
           make O=out ARCH=arm64 -j$(nproc) KCFLAGS="-Wno-error=designated-init" 2>&1 | tee build.log
 
