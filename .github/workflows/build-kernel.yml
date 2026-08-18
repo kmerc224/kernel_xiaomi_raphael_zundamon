@@ -1,4 +1,4 @@
-name: Build LineageOS SM8150 Kernel (Zundamon Base)
+name: Build Xiaomi SM8150 Kernel (MIUI/HyperOS Compatible)
 
 on:
   workflow_dispatch:
@@ -7,11 +7,11 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout LineageOS SM8150 kernel
+      - name: Checkout Xiaomi SM8150 kernel (with MIUI drivers)
         uses: actions/checkout@v4
         with:
-          repository: LineageOS/android_kernel_qcom_sm8150
-          ref: lineage-20
+          repository: qaz6750/android_kernel_xiaomi_sm8150
+          ref: a14-xiaomi-4.14.y
           path: kernel
 
       - name: Checkout workflow repo (config)
@@ -40,12 +40,14 @@ jobs:
 
       - name: Setup defconfig
         run: |
-          cp repo/kernel_config.txt kernel/arch/arm64/configs/vendor/raphael_defconfig
-          echo "Defconfig copied, line count: $(wc -l < kernel/arch/arm64/configs/vendor/raphael_defconfig)"
+          # Use the user's working Zundamon config as defconfig
+          cp repo/kernel_config.txt kernel/arch/arm64/configs/raphael_zundamon_defconfig
+          echo "Defconfig copied, total lines: $(wc -l < kernel/arch/arm64/configs/raphael_zundamon_defconfig)"
 
       - name: Build kernel
         run: |
           cd kernel
+
           export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
@@ -53,28 +55,39 @@ jobs:
           export CLANG_TRIPLE=aarch64-linux-gnu-
 
           echo "=== Step 1: make defconfig ==="
-          make O=out ARCH=arm64 vendor/raphael_defconfig
+          make O=out ARCH=arm64 raphael_zundamon_defconfig 2>&1 | tail -20
 
-          echo "=== Step 2: make olddefconfig (update for 4.14.35x) ==="
-          make O=out ARCH=arm64 olddefconfig
+          echo ""
+          echo "=== Step 2: make olddefconfig ==="
+          echo "This will auto-enable MIUI/HyperOS drivers (MACH_XIAOMI, xiaomi_touch, etc.)"
+          make O=out ARCH=arm64 olddefconfig 2>&1 | tail -20
 
-          echo "=== Step 3: make kernel ==="
+          echo ""
+          echo "=== Step 3: Verify key MIUI/HyperOS options ==="
+          for opt in MACH_XIAOMI MACH_XIAOMI_RAPHAEL TOUCHSCREEN_XIAOMI_TOUCHFEATURE TOUCHSCREEN_GOODIX_GTX8 FINGERPRINT_GOODIX_TA NFC_NQ; do
+            val=$(grep "CONFIG_${opt}=" out/.config || echo "NOT SET")
+            echo "  CONFIG_${opt}: ${val}"
+          done
+
+          echo ""
+          echo "=== Step 4: make kernel ==="
           make O=out ARCH=arm64 -j$(nproc) 2>&1 | tee build.log
 
+          echo ""
           echo "=== Build result ==="
           if [ -f out/arch/arm64/boot/Image ]; then
             echo "✓ Image built successfully"
             ls -lh out/arch/arm64/boot/Image*
           else
             echo "✗ Image not found, checking for errors..."
-            tail -50 build.log
+            tail -80 build.log
             exit 1
           fi
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-zundamon-base
+          name: kernel-xiaomi-miui
           path: |
             kernel/out/arch/arm64/boot/Image*
             kernel/out/arch/arm64/boot/dts/qcom/*.dtb
