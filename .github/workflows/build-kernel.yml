@@ -88,8 +88,10 @@ jobs:
           make O=out ARCH=arm64 -j$(nproc) dtbs KCFLAGS="-Wno-error=designated-init -Wno-error=format" 2>&1 | tail -15
 
           echo ""
-          echo "=== Step 5: Build Image.gz-dtb + dtbo.img (kernel + device tree) ==="
-          if ! make O=out ARCH=arm64 -j$(nproc) Image.gz-dtb dtbo.img KCFLAGS="-Wno-error=designated-init -Wno-error=format -Wno-error=enum-int-mismatch" > build.log 2>&1; then
+          echo "=== Step 5: Build Image.gz-dtb (kernel + base dtb, no dtbo) ==="
+          echo "(stock config has BUILD_ARM64_DT_OVERLAY off, so dtbo.img is NOT a target;"
+          echo " raphael device tree comes from the port ROM's boot/dtbo, not the kernel)"
+          if ! make O=out ARCH=arm64 -j$(nproc) Image.gz-dtb KCFLAGS="-Wno-error=designated-init -Wno-error=format -Wno-error=enum-int-mismatch" > build.log 2>&1; then
             echo "=== BUILD FAILED - error lines ==="
             grep -n -E "error:|Error [0-9]+|undefined reference|No rule to make|fatal error|cannot find|No such file|collect2|ld:" build.log | tail -100 || true
             echo ""
