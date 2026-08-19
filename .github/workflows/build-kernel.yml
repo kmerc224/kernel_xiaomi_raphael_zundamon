@@ -53,25 +53,34 @@ jobs:
 
           echo ""
           echo "=== Step 3: Verify key MIUI/HyperOS options ==="
-          for opt in MACH_XIAOMI MACH_XIAOMI_SM8150 MACH_XIAOMI_RAPHAEL MACH_XIAOMI_CEPHEUS TOUCHSCREEN_XIAOMI_TOUCHFEATURE TOUCHSCREEN_GOODIX_GTX8 FINGERPRINT_GOODIX_TA NFC_NQ; do
+          for opt in MACH_XIAOMI MACH_XIAOMI_SM8150 MACH_XIAOMI_RAPHAEL BUILD_ARM64_DT_OVERLAY TI_DRV8846; do
             val=$(grep "CONFIG_${opt}=" out/.config || echo "NOT SET")
             echo "  CONFIG_${opt}: ${val}"
           done
 
           echo ""
-          echo "=== Step 4: make kernel ==="
-          # Clang 22 treats designated-init warnings as errors; Xiaomi's rdbg.c needs this relaxed
-          make O=out ARCH=arm64 -j$(nproc) KCFLAGS="-Wno-error=designated-init" 2>&1 | tee build.log
+          echo "=== Step 4: Build device trees (dtb + dtbo) ==="
+          make O=out ARCH=arm64 -j$(nproc) dtbs KCFLAGS="-Wno-error=designated-init" 2>&1 | tail -15
+
+          echo ""
+          echo "=== Step 5: Build Image.gz-dtb + dtbo.img (kernel + device tree) ==="
+          make O=out ARCH=arm64 -j$(nproc) Image.gz-dtb dtbo.img KCFLAGS="-Wno-error=designated-init" 2>&1 | tee build.log | tail -15
 
           echo ""
           echo "=== Build result ==="
-          if [ -f out/arch/arm64/boot/Image ]; then
-            echo "✓ Image built successfully"
-            ls -lh out/arch/arm64/boot/Image*
+          ls -lh out/arch/arm64/boot/Image* out/arch/arm64/boot/dtbo.img 2>/dev/null
+          echo ""
+          if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
+            echo "✓ Image.gz-dtb built (kernel + device tree)"
           else
-            echo "✗ Image not found, checking for errors..."
-            tail -80 build.log
+            echo "✗ Image.gz-dtb not found!"
+            tail -60 build.log
             exit 1
+          fi
+          if [ -f out/arch/arm64/boot/dtbo.img ]; then
+            echo "✓ dtbo.img built (device tree overlay)"
+          else
+            echo "⚠ dtbo.img not built (overlay for raphael)"
           fi
 
       - name: Upload kernel artifacts
@@ -79,8 +88,10 @@ jobs:
         with:
           name: kernel-raphael-miui
           path: |
-            kernel/out/arch/arm64/boot/Image*
+            kernel/out/arch/arm64/boot/Image.gz-dtb
+            kernel/out/arch/arm64/boot/Image
             kernel/out/arch/arm64/boot/dts/qcom/*.dtb
+            kernel/out/arch/arm64/boot/dts/qcom/*.dtbo
             kernel/out/arch/arm64/boot/dtbo.img
             kernel/out/**/*.ko
             kernel/build.log
