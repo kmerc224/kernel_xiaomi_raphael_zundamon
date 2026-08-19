@@ -60,11 +60,11 @@ jobs:
 
           echo ""
           echo "=== Step 4: Build device trees (dtb + dtbo) ==="
-          make O=out ARCH=arm64 -j$(nproc) dtbs KCFLAGS="-Wno-error=designated-init" 2>&1 | tail -15
+          make O=out ARCH=arm64 -j$(nproc) dtbs KCFLAGS="-Wno-error=designated-init -Wno-error=format" 2>&1 | tail -15
 
           echo ""
           echo "=== Step 5: Build Image.gz-dtb + dtbo.img (kernel + device tree) ==="
-          make O=out ARCH=arm64 -j$(nproc) Image.gz-dtb dtbo.img KCFLAGS="-Wno-error=designated-init" 2>&1 | tee build.log | tail -15
+          make O=out ARCH=arm64 -j$(nproc) Image.gz-dtb dtbo.img KCFLAGS="-Wno-error=designated-init -Wno-error=format" 2>&1 | tee build.log | tail -15
 
           echo ""
           echo "=== Build result ==="
