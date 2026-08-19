@@ -14,6 +14,16 @@ jobs:
           ref: a14-xiaomi-4.14.y
           path: kernel
 
+      - name: Patch qcacld-3.0 enum-int-mismatch (Clang 22)
+        run: |
+          cd kernel
+          F=drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
+          # make definition match the header declaration (uint32_t reason)
+          sed -i 's/enum qdf_hang_reason reason, uint8_t \*data,/uint32_t reason, uint8_t *data,/' "$F"
+          sed -i 's/hang_reason = hdd_convert_hang_reason(reason);/hang_reason = hdd_convert_hang_reason((enum qdf_hang_reason)reason);/' "$F"
+          echo "=== patched signature ==="
+          grep -n "wlan_hdd_send_hang_reason_event\|hdd_convert_hang_reason(reason)" "$F" | head
+
       - name: Setup AOSP Clang 22.0.0 (r522817)
         run: |
           mkdir -p clang
@@ -64,7 +74,7 @@ jobs:
 
           echo ""
           echo "=== Step 5: Build Image.gz-dtb + dtbo.img (kernel + device tree) ==="
-          if ! make O=out ARCH=arm64 -j$(nproc) Image.gz-dtb dtbo.img KCFLAGS="-Wno-error=designated-init -Wno-error=format" > build.log 2>&1; then
+          if ! make O=out ARCH=arm64 -j$(nproc) Image.gz-dtb dtbo.img KCFLAGS="-Wno-error=designated-init -Wno-error=format -Wno-error=enum-int-mismatch" > build.log 2>&1; then
             echo "=== BUILD FAILED - error lines ==="
             grep -n -E "error:|Error [0-9]+|undefined reference|No rule to make|fatal error" build.log | tail -80 || true
             echo ""
