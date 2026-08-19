@@ -109,7 +109,7 @@ jobs:
 
           echo ""
           echo "=== Build result ==="
-          ls -lh out/arch/arm64/boot/Image* out/arch/arm64/boot/dtbo.img 2>/dev/null
+          ls -lh out/arch/arm64/boot/Image out/arch/arm64/boot/Image.gz out/arch/arm64/boot/Image.gz-dtb 2>/dev/null || true
           echo ""
           if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
             echo "✓ Image.gz-dtb built (kernel + device tree)"
@@ -129,10 +129,9 @@ jobs:
           name: kernel-raphael-miui
           path: |
             kernel/out/arch/arm64/boot/Image.gz-dtb
+            kernel/out/arch/arm64/boot/Image.gz
             kernel/out/arch/arm64/boot/Image
             kernel/out/arch/arm64/boot/dts/qcom/*.dtb
-            kernel/out/arch/arm64/boot/dts/qcom/*.dtbo
-            kernel/out/arch/arm64/boot/dtbo.img
             kernel/out/**/*.ko
             kernel/build.log
             kernel/out/.config
