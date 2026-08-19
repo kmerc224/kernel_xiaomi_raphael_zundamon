@@ -24,7 +24,7 @@ jobs:
           echo "=== patched signature ==="
           grep -n "wlan_hdd_send_hang_reason_event\|hdd_convert_hang_reason(reason)" "$F" | head
           # drop -Werror from qcacld Kbuild so Clang 22 warnings are non-fatal
-          sed -i 's/^[[:space:]]*-Werror\\$//' drivers/staging/qcacld-3.0/Kbuild
+          sed -i '/^[[:space:]]*-Werror\\$/d' drivers/staging/qcacld-3.0/Kbuild
           echo "=== qcacld cppflags after patch ==="
           grep -n -A5 "ANI_OS_TYPE_ANDROID" drivers/staging/qcacld-3.0/Kbuild | head
 
@@ -80,10 +80,16 @@ jobs:
           echo "=== Step 5: Build Image.gz-dtb + dtbo.img (kernel + device tree) ==="
           if ! make O=out ARCH=arm64 -j$(nproc) Image.gz-dtb dtbo.img KCFLAGS="-Wno-error=designated-init -Wno-error=format -Wno-error=enum-int-mismatch" > build.log 2>&1; then
             echo "=== BUILD FAILED - error lines ==="
-            grep -n -E "error:|Error [0-9]+|undefined reference|No rule to make|fatal error" build.log | tail -80 || true
+            grep -n -E "error:|Error [0-9]+|undefined reference|No rule to make|fatal error|cannot find|No such file|collect2|ld:" build.log | tail -100 || true
             echo ""
-            echo "=== BUILD FAILED - tail of build.log ==="
-            tail -80 build.log
+            echo "=== BUILD FAILED - context around first error ==="
+            LINE=$(grep -nE "Error [0-9]+|error:" build.log | head -1 | cut -d: -f1)
+            if [ -n "$LINE" ]; then
+              START=$((LINE-60)); [ $START -lt 1 ] && START=1
+              sed -n "${START},$((LINE+8))p" build.log
+            else
+              tail -150 build.log
+            fi
             exit 1
           fi
           tail -20 build.log
