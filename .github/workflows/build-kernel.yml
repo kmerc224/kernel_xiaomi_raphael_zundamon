@@ -64,7 +64,15 @@ jobs:
 
           echo ""
           echo "=== Step 5: Build Image.gz-dtb + dtbo.img (kernel + device tree) ==="
-          make O=out ARCH=arm64 -j$(nproc) Image.gz-dtb dtbo.img KCFLAGS="-Wno-error=designated-init -Wno-error=format" 2>&1 | tee build.log | tail -15
+          if ! make O=out ARCH=arm64 -j$(nproc) Image.gz-dtb dtbo.img KCFLAGS="-Wno-error=designated-init -Wno-error=format" > build.log 2>&1; then
+            echo "=== BUILD FAILED - error lines ==="
+            grep -n -E "error:|Error [0-9]+|undefined reference|No rule to make|fatal error" build.log | tail -80 || true
+            echo ""
+            echo "=== BUILD FAILED - tail of build.log ==="
+            tail -80 build.log
+            exit 1
+          fi
+          tail -20 build.log
 
           echo ""
           echo "=== Build result ==="
@@ -74,7 +82,6 @@ jobs:
             echo "✓ Image.gz-dtb built (kernel + device tree)"
           else
             echo "✗ Image.gz-dtb not found!"
-            tail -60 build.log
             exit 1
           fi
           if [ -f out/arch/arm64/boot/dtbo.img ]; then
