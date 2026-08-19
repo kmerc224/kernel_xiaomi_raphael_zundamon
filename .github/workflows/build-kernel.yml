@@ -43,9 +43,16 @@ jobs:
           ./bin/clang --version
 
       - name: Install cross-compilers
+        timeout-minutes: 20
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+          export DEBIAN_FRONTEND=noninteractive
+          # skip apt-get update (runner image already has fresh package lists)
+          sudo apt-get install -y -o Acquire::Retries=5 -o Acquire::http::Timeout=120 \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi 2>&1 | tail -8
+          echo "aarch64-linux-gnu-gcc:"
+          aarch64-linux-gnu-gcc --version | head -1 || echo "MISSING aarch64 gcc"
+          echo "arm-linux-gnueabi-gcc:"
+          arm-linux-gnueabi-gcc --version | head -1 || echo "MISSING arm gcc"
 
       - name: Build kernel
         run: |
