@@ -23,6 +23,10 @@ jobs:
           sed -i 's/hang_reason = hdd_convert_hang_reason(reason);/hang_reason = hdd_convert_hang_reason((enum qdf_hang_reason)reason);/' "$F"
           echo "=== patched signature ==="
           grep -n "wlan_hdd_send_hang_reason_event\|hdd_convert_hang_reason(reason)" "$F" | head
+          # drop -Werror from qcacld Kbuild so Clang 22 warnings are non-fatal
+          sed -i 's/^ *-Werror\\$//' drivers/staging/qcacld-3.0/Kbuild
+          echo "=== qcacld cppflags after patch ==="
+          grep -n -A5 "ANI_OS_TYPE_ANDROID" drivers/staging/qcacld-3.0/Kbuild | head
 
       - name: Setup AOSP Clang 22.0.0 (r522817)
         run: |
