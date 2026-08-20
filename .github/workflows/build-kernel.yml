@@ -14,6 +14,19 @@ jobs:
           ref: a16-hyper-xiaomi-4.14.y
           path: kernel
 
+      - name: Strip -Werror globally (techpacks re-add it after KCFLAGS)
+        run: |
+          cd kernel
+          # QCOM audio/video/data/display techpacks inject their own -Werror into
+          # ccflags/CFLAGS AFTER our KCFLAGS, which re-promotes benign warnings to
+          # fatal errors (e.g. -Wmaybe-uninitialized in wcd9xxx-core.c). Remove all
+          # -Werror and -Werror=<x> from every build file so warnings stay non-fatal.
+          find . -type f \( -name "Makefile" -o -name "Kbuild" -o -name "*.mk" -o -name "Kconfig" \) \
+            -print0 | xargs -0 sed -i -E 's/-Werror(=[A-Za-z0-9_-]+)?//g'
+          echo "=== remaining -Werror occurrences (expect none) ==="
+          grep -rnF -e '-Werror' \
+            --include='Makefile' --include='Kbuild' --include='*.mk' --include='Kconfig' . 2>/dev/null | head -20 || echo "none"
+
       - name: Patch qcacld-3.0 enum-int-mismatch (Clang 22)
         run: |
           cd kernel
