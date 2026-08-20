@@ -7,6 +7,11 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout build repo (this repo, for kernel_config.txt)
+        uses: actions/checkout@v4
+        with:
+          path: buildrepo
+
       - name: Checkout a14 Xiaomi SM8150 kernel (raphael support)
         uses: actions/checkout@v4
         with:
@@ -45,7 +50,7 @@ jobs:
 
           echo "=== Step 1: import exact working .config (cur = Zundamon perf) ==="
           mkdir -p out
-          cp "$GITHUB_WORKSPACE/kernel_config.txt" out/.config
+          cp "$GITHUB_WORKSPACE/buildrepo/kernel_config.txt" out/.config
           echo "imported config lines: $(grep -c . out/.config)"
 
           echo ""
