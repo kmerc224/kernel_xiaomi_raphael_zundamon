@@ -37,18 +37,12 @@ jobs:
       - name: Build Image.gz (bare kernel, clang 22)
         run: |
           cd kernel
-          export PATH=/tmp/tc/bin:$PATH
+          export PATH=/tmp/tc/bin:/tmp/tc/aarch64-linux-gnu/bin:/tmp/tc/arm-linux-gnueabi/bin:$PATH
           export ARCH=arm64
-          export CC=clang
-          export HOSTCC=clang
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-          export LD=ld.lld
-          export AR=llvm-ar
-          export NM=llvm-nm
-          export OBJCOPY=llvm-objcopy
-          export STRIP=llvm-strip
+
+          # NOTE: CC/LD/etc are passed on the make COMMAND LINE (not env),
+          # because kernel Makefile sets "CC = $(CROSS_COMPILE)gcc" which would
+          # override an exported CC. Command-line vars take precedence.
 
           echo "=== verify toolchain ==="
           clang --version | head -1
@@ -61,7 +55,7 @@ jobs:
           echo "imported config lines: $(grep -c . out/.config)"
 
           echo "=== olddefconfig ==="
-          make O=out ARCH=arm64 olddefconfig 2>&1 | tail -15
+          make O=out ARCH=arm64 CC=clang HOSTCC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- olddefconfig 2>&1 | tail -15
 
           echo "=== verify boot-critical options ==="
           for opt in ARCH_SM8150 TI_DRV8846 BPF_SYSCALL BPF_JIT_ALWAYS_ON QCOM_KGSL DRM_MSM LOCALVERSION IKCONFIG; do
@@ -69,7 +63,14 @@ jobs:
           done
 
           echo "=== build Image.gz ==="
-          if ! make O=out ARCH=arm64 -j$(nproc) Image.gz \
+          if ! make O=out ARCH=arm64 \
+              CC=clang HOSTCC=clang \
+              LD=ld.lld AR=llvm-ar NM=llvm-nm \
+              OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+              CLANG_TRIPLE=aarch64-linux-gnu- \
+              CROSS_COMPILE=aarch64-linux-gnu- \
+              CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+              -j$(nproc) Image.gz \
               KCFLAGS="-Wno-error" > build.log 2>&1; then
             echo "=== BUILD FAILED - error lines ==="
             grep -n -E "error:|Error [0-9]+|undefined reference|No rule to make|fatal error|No such file|collect2|ld:" build.log | tail -80 || true
