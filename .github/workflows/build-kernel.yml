@@ -52,13 +52,17 @@ jobs:
           echo "=== import exact working config ==="
           mkdir -p out
           cp "$GITHUB_WORKSPACE/buildrepo/kernel_config.txt" out/.config
+          # Append board selection: MACH_XIAOMI_RAPHAEL selects MACH_XIAOMI_SM8150
+          # (which gates get_hw_version_platform/HARDWARE_PLATFORM_VAYU in socinfo.h,
+          #  needed by goodix_ta, AND makes dtbs pick the raphael board, not RUMI).
+          echo "CONFIG_MACH_XIAOMI_RAPHAEL=y" >> out/.config
           echo "imported config lines: $(grep -c . out/.config)"
 
           echo "=== olddefconfig ==="
           make O=out ARCH=arm64 CC=clang HOSTCC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- olddefconfig 2>&1 | tail -15
 
           echo "=== verify boot-critical options ==="
-          for opt in ARCH_SM8150 TI_DRV8846 BPF_SYSCALL BPF_JIT_ALWAYS_ON QCOM_KGSL DRM_MSM LOCALVERSION IKCONFIG; do
+          for opt in ARCH_SM8150 MACH_XIAOMI_RAPHAEL MACH_XIAOMI_SM8150 TI_DRV8846 BPF_SYSCALL BPF_JIT_ALWAYS_ON QCOM_KGSL DRM_MSM LOCALVERSION IKCONFIG; do
             grep "CONFIG_${opt}=" out/.config | sed 's/^/  /'
           done
 
