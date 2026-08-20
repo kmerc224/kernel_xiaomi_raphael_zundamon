@@ -1,4 +1,4 @@
-name: Build Xiaomi SM8150 Kernel (raphael / K20 Pro, MIUI)
+name: Build A16 SM8150 Kernel (raphael quick verify)
 
 on:
   workflow_dispatch:
@@ -7,11 +7,11 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout Xiaomi SM8150 kernel (with MIUI drivers)
+      - name: Checkout A16 HyperOS SM8150 kernel
         uses: actions/checkout@v4
         with:
           repository: qaz6750/android_kernel_xiaomi_sm8150
-          ref: a14-xiaomi-4.14.y
+          ref: a16-hyper-xiaomi-4.14.y
           path: kernel
 
       - name: Patch qcacld-3.0 enum-int-mismatch (Clang 22)
@@ -64,34 +64,28 @@ jobs:
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
           export CLANG_TRIPLE=aarch64-linux-gnu-
 
-          echo "=== Step 1: make raphael_stock_defconfig ==="
-          echo "Use the FULL 6155-line raphael stock defconfig (identical to the"
-          echo "working Zundamon/HyperOS3 port kernel). NOT the 741-line raphael_defconfig,"
-          echo "which enables MACH_XIAOMI_* MIUI hooks incompatible with the AOSP port."
-          make O=out ARCH=arm64 raphael_stock_defconfig 2>&1 | tail -20
+          echo "=== Step 1: make vendor/sm8150_defconfig ==="
+          echo "A16 branch has no raphael defconfig; use generic CAF sm8150 defconfig."
+          echo "This only VERIFIES whether A16+LTS kernel boots; MIUI raphael device"
+          echo "drivers are not merged yet, so pop-up camera etc. will NOT work in this build."
+          make O=out ARCH=arm64 vendor/sm8150_defconfig 2>&1 | tail -20
 
           echo ""
           echo "=== Step 2: make olddefconfig ==="
           make O=out ARCH=arm64 olddefconfig 2>&1 | tail -20
 
           echo ""
-          echo "=== Step 3: Verify key boot-critical options (standard SM8150 path) ==="
-          for opt in BUILD_ARM64_DT_OVERLAY TI_DRV8846 DRM_MSM_DSI_STAGING QCOM_KGSL DM_VERITY DM_VERITY_AVB BPF_SYSCALL; do
+          echo "=== Step 3: verify key boot-critical options ==="
+          for opt in ARCH_SM8150 BPF_SYSCALL BPF_JIT_ALWAYS_ON DM_VERITY DM_VERITY_FEC QCOM_KGSL DRM_MSM; do
             val=$(grep "CONFIG_${opt}=" out/.config || echo "NOT SET")
             echo "  CONFIG_${opt}: ${val}"
           done
-          echo "  (MACH_XIAOMI_* should be NOT SET here - that is expected and correct)"
-          grep -E "CONFIG_MACH_XIAOMI" out/.config || echo "  MACH_XIAOMI_*: NOT SET (good)"
+          echo "  CONFIG_BUILD_ARM64_DT_OVERLAY: $(grep 'CONFIG_BUILD_ARM64_DT_OVERLAY=' out/.config || echo 'NOT SET (good, bare kernel without appended dtb)')"
 
           echo ""
-          echo "=== Step 4: Build device trees (dtb + dtbo) ==="
-          make O=out ARCH=arm64 -j$(nproc) dtbs KCFLAGS="-Wno-error=designated-init -Wno-error=format" 2>&1 | tail -15
-
-          echo ""
-          echo "=== Step 5: Build Image.gz-dtb (kernel + base dtb, no dtbo) ==="
-          echo "(stock config has BUILD_ARM64_DT_OVERLAY off, so dtbo.img is NOT a target;"
-          echo " raphael device tree comes from the port ROM's boot/dtbo, not the kernel)"
-          if ! make O=out ARCH=arm64 -j$(nproc) Image.gz-dtb KCFLAGS="-Wno-error=designated-init -Wno-error=format -Wno-error=enum-int-mismatch" > build.log 2>&1; then
+          echo "=== Step 4: build Image.gz (bare kernel ONLY, no appended dtb) ==="
+          echo "We do NOT build dtbs/dtbo here. We preserve the port ROM's device tree."
+          if ! make O=out ARCH=arm64 -j$(nproc) Image.gz KCFLAGS="-Wno-error=designated-init -Wno-error=format -Wno-error=enum-int-mismatch" > build.log 2>&1; then
             echo "=== BUILD FAILED - error lines ==="
             grep -n -E "error:|Error [0-9]+|undefined reference|No rule to make|fatal error|cannot find|No such file|collect2|ld:" build.log | tail -100 || true
             echo ""
@@ -109,29 +103,20 @@ jobs:
 
           echo ""
           echo "=== Build result ==="
-          ls -lh out/arch/arm64/boot/Image out/arch/arm64/boot/Image.gz out/arch/arm64/boot/Image.gz-dtb 2>/dev/null || true
-          echo ""
-          if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
-            echo "✓ Image.gz-dtb built (kernel + device tree)"
+          ls -lh out/arch/arm64/boot/Image out/arch/arm64/boot/Image.gz 2>/dev/null || true
+          if [ -f out/arch/arm64/boot/Image.gz ]; then
+            echo "✓ Image.gz built (bare kernel)"
           else
-            echo "✗ Image.gz-dtb not found!"
+            echo "✗ Image.gz not found!"
             exit 1
-          fi
-          if [ -f out/arch/arm64/boot/dtbo.img ]; then
-            echo "✓ dtbo.img built (device tree overlay)"
-          else
-            echo "⚠ dtbo.img not built (overlay for raphael)"
           fi
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-raphael-miui
+          name: kernel-raphael-a16-verify
           path: |
-            kernel/out/arch/arm64/boot/Image.gz-dtb
             kernel/out/arch/arm64/boot/Image.gz
             kernel/out/arch/arm64/boot/Image
-            kernel/out/arch/arm64/boot/dts/qcom/*.dtb
-            kernel/out/**/*.ko
             kernel/build.log
             kernel/out/.config
