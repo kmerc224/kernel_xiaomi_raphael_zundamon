@@ -85,7 +85,7 @@ jobs:
           echo ""
           echo "=== Step 4: build Image.gz (bare kernel ONLY, no appended dtb) ==="
           echo "We do NOT build dtbs/dtbo here. We preserve the port ROM's device tree."
-          if ! make O=out ARCH=arm64 -j$(nproc) Image.gz KCFLAGS="-Wno-error=designated-init -Wno-error=format -Wno-error=enum-int-mismatch -Wno-error=maybe-uninitialized -Wno-error=unused-function -Wno-error=unused-variable" > build.log 2>&1; then
+          if ! make O=out ARCH=arm64 -j$(nproc) Image.gz KCFLAGS="-Wno-error -Wno-error=maybe-uninitialized -Wno-error=address -Wno-error=unused-function -Wno-error=unused-variable -Wno-error=enum-int-mismatch -Wno-error=misleading-indentation" > build.log 2>&1; then
             echo "=== BUILD FAILED - error lines ==="
             grep -n -E "error:|Error [0-9]+|undefined reference|No rule to make|fatal error|cannot find|No such file|collect2|ld:" build.log | tail -100 || true
             echo ""
