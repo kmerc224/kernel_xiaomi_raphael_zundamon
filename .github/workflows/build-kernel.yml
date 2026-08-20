@@ -1,4 +1,4 @@
-name: Build raphael Image.gz-dtb (exact working config)
+name: Build raphael kernel (LineageOS 23.2 + clang 22)
 
 on:
   workflow_dispatch:
@@ -7,101 +7,100 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout build repo (this repo, for kernel_config.txt)
+      - name: Checkout build repo (config + dtb assets)
         uses: actions/checkout@v4
         with:
           path: buildrepo
 
-      - name: Checkout a14 Xiaomi SM8150 kernel (raphael support)
+      - name: Checkout LineageOS kernel (lineage-23.2, closest to working 4.14.357)
         uses: actions/checkout@v4
         with:
-          repository: qaz6750/android_kernel_xiaomi_sm8150
-          ref: a14-xiaomi-4.14.y
+          repository: LineageOS/android_kernel_xiaomi_sm8150
+          ref: lineage-23.2
           path: kernel
 
-      - name: Patch qcacld-3.0 enum-int-mismatch (compiler safety)
+      - name: Install build deps + 7z
+        run: |
+          sudo apt-get update >/dev/null 2>&1 || true
+          sudo apt-get install -y -o Acquire::Retries=3 bc flex bison libssl-dev libelf-dev p7zip-full >/dev/null 2>&1
+          echo "deps ok"
+
+      - name: Download Mandi-Sa clang 22 toolchain
+        timeout-minutes: 10
+        run: |
+          cd /tmp
+          curl -sSL --retry 3 -o tc.7z "https://github.com/Mandi-Sa/clang/releases/download/amd64-kernel-arm_static-22/llvm22.0.0-binutils2.45.1_amd64-kernel-arm_static-20260111.7z"
+          ls -lh tc.7z
+          7z x -y tc.7z -o/tmp/tc >/dev/null
+          /tmp/tc/bin/clang --version | head -1
+
+      - name: Build Image.gz (bare kernel, clang 22)
         run: |
           cd kernel
-          F=drivers/staging/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c
-          if [ -f "$F" ]; then
-            sed -i 's/enum qdf_hang_reason reason, uint8_t \*data,/uint32_t reason, uint8_t *data,/' "$F"
-            sed -i 's/hang_reason = hdd_convert_hang_reason(reason);/hang_reason = hdd_convert_hang_reason((enum qdf_hang_reason)reason);/' "$F"
-            echo "patched $F"
-          else
-            echo "$F not present; skip"
-          fi
-
-      - name: Install cross-compilers
-        timeout-minutes: 20
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get install -y -o Acquire::Retries=5 -o Acquire::http::Timeout=120 \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi 2>&1 | tail -8
-          aarch64-linux-gnu-gcc --version | head -1 || echo "MISSING aarch64 gcc"
-          arm-linux-gnueabi-gcc --version | head -1 || echo "MISSING arm gcc"
-
-      - name: Build Image.gz-dtb with exact working config
-        run: |
-          cd kernel
-
+          export PATH=/tmp/tc/bin:$PATH
           export ARCH=arm64
+          export CC=clang
+          export HOSTCC=clang
+          export CLANG_TRIPLE=aarch64-linux-gnu-
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          export LD=ld.lld
+          export AR=llvm-ar
+          export NM=llvm-nm
+          export OBJCOPY=llvm-objcopy
+          export STRIP=llvm-strip
 
-          echo "=== Step 1: import exact working .config (cur = Zundamon perf) ==="
+          echo "=== verify toolchain ==="
+          clang --version | head -1
+          ld.lld --version | head -1
+          aarch64-linux-gnu-as --version | head -1 || true
+
+          echo "=== import exact working config ==="
           mkdir -p out
           cp "$GITHUB_WORKSPACE/buildrepo/kernel_config.txt" out/.config
           echo "imported config lines: $(grep -c . out/.config)"
 
-          echo ""
-          echo "=== Step 2: olddefconfig (resolve any source drift) ==="
-          make O=out ARCH=arm64 olddefconfig 2>&1 | tail -20
+          echo "=== olddefconfig ==="
+          make O=out ARCH=arm64 olddefconfig 2>&1 | tail -15
 
-          echo ""
-          echo "=== Step 3: verify boot-critical options ==="
-          for opt in ARCH_SM8150 TI_DRV8846 BPF_SYSCALL BPF_JIT_ALWAYS_ON QCOM_KGSL DRM_MSM PSTORE_RAM \
-                     BUILD_ARM64_APPENDED_DTB_IMAGE IMG_GZ_DTB BUILD_ARM64_DT_OVERLAY LOCALVERSION; do
-            grep "CONFIG_${opt}=*" out/.config | sed 's/^# //' | sed 's/^/  CONFIG_/'
+          echo "=== verify boot-critical options ==="
+          for opt in ARCH_SM8150 TI_DRV8846 BPF_SYSCALL BPF_JIT_ALWAYS_ON QCOM_KGSL DRM_MSM LOCALVERSION IKCONFIG; do
+            grep "CONFIG_${opt}=" out/.config | sed 's/^/  /'
           done
-          echo "  (above: CONFIG_BUILD_ARM64_DT_OVERLAY should be NOT set / commented)"
 
-          echo ""
-          echo "=== Step 4: build Image.gz-dtb (kernel + appended raphael dtb) ==="
-          if ! make O=out ARCH=arm64 -j$(nproc) Image.gz-dtb \
-              KCFLAGS="-Wno-error -Wno-error=maybe-uninitialized -Wno-error=address -Wno-error=unused-function -Wno-error=unused-variable -Wno-error=enum-int-mismatch -Wno-error=misleading-indentation" > build.log 2>&1; then
+          echo "=== build Image.gz ==="
+          if ! make O=out ARCH=arm64 -j$(nproc) Image.gz \
+              KCFLAGS="-Wno-error" > build.log 2>&1; then
             echo "=== BUILD FAILED - error lines ==="
-            grep -n -E "error:|Error [0-9]+|undefined reference|No rule to make|fatal error|No such file|collect2|ld:" build.log | tail -100 || true
+            grep -n -E "error:|Error [0-9]+|undefined reference|No rule to make|fatal error|No such file|collect2|ld:" build.log | tail -80 || true
             echo ""
             echo "=== context around first error ==="
             LINE=$(grep -nE "Error [0-9]+|error:" build.log | head -1 | cut -d: -f1)
             if [ -n "$LINE" ]; then
-              START=$((LINE-60)); [ $START -lt 1 ] && START=1
-              sed -n "${START},$((LINE+8))p" build.log
+              START=$((LINE-50)); [ $START -lt 1 ] && START=1
+              sed -n "${START},$((LINE+6))p" build.log
             else
-              tail -150 build.log
+              tail -120 build.log
             fi
             exit 1
           fi
-          tail -20 build.log
+          tail -15 build.log
 
-          echo ""
-          echo "=== Build result ==="
-          ls -lh out/arch/arm64/boot/Image.gz-dtb out/arch/arm64/boot/Image.gz 2>/dev/null || true
-          if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
-            echo "OK: Image.gz-dtb built"
-            echo -n "appended FDT magic count (d00dfeed): "
-            grep -c $'\xd0\x0d\xfe\xed' out/arch/arm64/boot/Image.gz-dtb || echo "0 (WARN: dtb NOT appended)"
+          echo "=== result ==="
+          ls -lh out/arch/arm64/boot/Image out/arch/arm64/boot/Image.gz 2>/dev/null || true
+          if [ -f out/arch/arm64/boot/Image.gz ]; then
+            echo "OK: Image.gz built"
+            strings out/arch/arm64/boot/Image 2>/dev/null | grep -m1 "Linux version" || true
           else
-            echo "FAIL: Image.gz-dtb not found!"
+            echo "FAIL"
             exit 1
           fi
 
-      - name: Upload kernel artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-raphael-stock-a14
+          name: kernel-raphael-los23-clang22
           path: |
-            kernel/out/arch/arm64/boot/Image.gz-dtb
             kernel/out/arch/arm64/boot/Image.gz
             kernel/out/arch/arm64/boot/Image
             kernel/build.log
