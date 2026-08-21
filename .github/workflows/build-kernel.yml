@@ -39,11 +39,14 @@ jobs:
       - name: Build Image.gz-dtb (official raphael_defconfig, clang 22)
         run: |
           cd kernel
-          # Bare host `ld` was removed from /tmp/tc/bin above, so it is now SAFE
-          # to put /tmp/tc/bin back on PATH: host tools (scripts/dtc) use the
-          # system gcc -> system /usr/bin/ld, while the kernel links via
-          # aarch64-linux-gnu-ld (cross, still in /tmp/tc/bin).
-          export PATH=/tmp/tc/bin:/tmp/tc/aarch64-linux-gnu/bin:/tmp/tc/arm-linux-gnueabi/bin:$PATH
+          # Put ONLY /tmp/tc/bin on PATH (NOT the aarch64-linux-gnu/ or
+          # arm-linux-gnueabi/ subdirs — those hold UNPREFIXED cross `ld`
+          # that shadows the system linker and breaks host tools with
+          # "unrecognised emulation mode: elf_x86_64").
+          # /tmp/tc/bin holds: clang + PREFIXED aarch64-linux-gnu-ld (cross).
+          # Bare host ld was already deleted above, so host tools fall back to
+          # system gcc -> system /usr/bin/ld (supports elf_x86_64 + libyaml).
+          export PATH=/tmp/tc/bin:$PATH
           export ARCH=arm64
           echo "=== Makefile version check (must be 4.14.356+, NOT the old 4.14.336) ==="
           grep -E "^(VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION)" Makefile
@@ -62,7 +65,9 @@ jobs:
           /tmp/tc/bin/clang --version | head -1
           aarch64-linux-gnu-ld --version | head -1
           gcc --version | head -1
-          which ld
+          echo "which ld      -> $(which ld 2>/dev/null || echo MISSING)"
+          echo "which clang   -> $(which clang 2>/dev/null || echo MISSING)"
+          echo "which aarch64-linux-gnu-ld -> $(which aarch64-linux-gnu-ld 2>/dev/null || echo MISSING)"
 
           echo "=== raphael_defconfig ==="
           make O=out ARCH=arm64 $MAKEVARS raphael_defconfig 2>&1 | tail -15
