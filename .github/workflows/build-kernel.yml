@@ -34,14 +34,7 @@ jobs:
           cd kernel
           export PATH=/tmp/tc/bin:/tmp/tc/aarch64-linux-gnu/bin:/tmp/tc/arm-linux-gnueabi/bin:$PATH
           export ARCH=arm64
-
-          # CC/LD passed on the make COMMAND LINE (kernel Makefile assigns
-          # "CC = $(CROSS_COMPILE)gcc", overriding an exported CC).
-          MAKEVARS="CC=clang HOSTCC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
-                    OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-                    CLANG_TRIPLE=aarch64-linux-gnu- \
-                    CROSS_COMPILE=aarch64-linux-gnu- \
-                    CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
+          MAKEVARS="CC=clang HOSTCC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
 
           echo "=== verify toolchain ==="
           clang --version | head -1
@@ -51,62 +44,27 @@ jobs:
           make O=out ARCH=arm64 $MAKEVARS raphael_defconfig 2>&1 | tail -15
 
           echo "=== verify boot-critical options ==="
-          for opt in ARCH_SM8150 MACH_XIAOMI_RAPHAEL MACH_XIAOMI_SM8150 TI_DRV8846 \
-                     TOUCHSCREEN_GOODIX_GTX8 FINGERPRINT_GOODIX_TA FPR_FPC \
-                     BUILD_ARM64_APPENDED_DTB_IMAGE BUILD_ARM64_DT_OVERLAY \
-                     LOCALVERSION; do
+          for opt in ARCH_SM8150 MACH_XIAOMI_RAPHAEL MACH_XIAOMI_SM8150 TI_DRV8846 TOUCHSCREEN_GOODIX_GTX8 FINGERPRINT_GOODIX_TA FPR_FPC BUILD_ARM64_APPENDED_DTB_IMAGE BUILD_ARM64_DT_OVERLAY LOCALVERSION; do
             grep "CONFIG_${opt}=" out/.config | sed 's/^/  /'
           done
 
-          echo "=== build Image.gz-dtb (appends correct raphael/sm8150-v2 dtb) ==="
-          if ! make O=out ARCH=arm64 $MAKEVARS -j$(nproc) Image.gz-dtb \
-              KCFLAGS="-Wno-error" > build.log 2>&1; then
+          echo "=== build Image.gz-dtb ==="
+          if ! make O=out ARCH=arm64 $MAKEVARS -j$(nproc) Image.gz-dtb KCFLAGS="-Wno-error" > build.log 2>&1; then
             echo "=== BUILD FAILED - error lines ==="
             grep -n -E "error:|Error [0-9]+|undefined reference|No rule to make|fatal error|No such file" build.log | tail -80 || true
-            LINE=$(grep -nE "Error [0-9]+|error:" build.log | head -1 | cut -d: -f1)
-            if [ -n "$LINE" ]; then
-              START=$((LINE-40)); [ $START -lt 1 ] && START=1
-              sed -n "${START},$((LINE+6))p" build.log
-            else
-              tail -100 build.log
-            fi
+            tail -80 build.log
             exit 1
           fi
           echo "=== build done ==="
           tail -15 build.log
 
-          echo "=== dtb files built ==="
+          echo "=== dtb/dtbo files built ==="
           ls -lh out/arch/arm64/boot/dts/qcom/*.dtb 2>/dev/null | sed 's/^/  /' || true
           ls -lh out/arch/arm64/boot/dts/qcom/*.dtbo 2>/dev/null | sed 's/^/  /' || true
 
-          echo "=== verify appended dtb inside Image.gz-dtb is NOT rumi ==="
-          python3 - <<'PY'
-  import struct, re
-  d = open('out/arch/arm64/boot/Image.gz-dtb','rb').read()
-  idx = d.rfind(b'\xd0\x0d\xfe\xed')
-  print('  appended FDT magic offset:', idx, 'of', len(d))
-  if idx >= 0:
-      totalsize = struct.unpack_from('>I', d, idx+4)[0]
-      dtb = d[idx:idx+totalsize]
-      low = dtb.lower()
-      is_rumi = b'rumi' in low
-      has_v2 = b'sm8150-v2' in low or b'sm8150 v2' in low
-      has_sm8150 = b'sm8150' in low
-      print('  dtb totalsize:', totalsize)
-      print('  contains "rumi":', is_rumi)
-      print('  contains sm8150-v2:', has_v2)
-      print('  contains sm8150:', has_sm8150)
-      if is_rumi:
-          print('  *** WARN: appended dtb is RUMI emulation board ***')
-      else:
-          print('  OK: appended dtb is a real platform (not RUMI)')
-      # print board-ish strings
-      strs = set(re.findall(rb'[\x20-\x7e]{6,}', dtb))
-      for s in sorted(strs):
-          t = s.decode(errors='replace')
-          if any(k in t.lower() for k in ['sm8150','rumi','mtp','xiaomi','raphael','v2']):
-              print('   ', t)
-  PY
+          echo "=== verify appended dtb is NOT rumi ==="
+          python3 -c "d=open('out/arch/arm64/boot/Image.gz-dtb','rb').read(); i=d.rfind(b'\xd0\x0d\xfe\xed'); print('  FDT_offset', i, 'of', len(d))"
+          strings out/arch/arm64/boot/Image.gz-dtb 2>/dev/null | grep -iE "rumi|sm8150-v2|sm8150 v2|mtp|raphael|xiaomi" | sort -u | head -30 || echo "  (no board strings found)"
 
           echo "=== result ==="
           ls -lh out/arch/arm64/boot/Image out/arch/arm64/boot/Image.gz out/arch/arm64/boot/Image.gz-dtb 2>/dev/null | sed 's/^/  /' || true
