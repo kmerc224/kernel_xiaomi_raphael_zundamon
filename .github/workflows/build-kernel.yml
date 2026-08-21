@@ -33,7 +33,7 @@ jobs:
           # (-lyaml -> "undefined reference to yaml_*"). Delete ONLY the bare
           # host linkers; KEEP aarch64-linux-gnu-ld (cross) + clang + clang-22.
           rm -f /tmp/tc/bin/ld /tmp/tc/bin/ld.bfd /tmp/tc/bin/ld.lld /tmp/tc/bin/ld64.lld
-          ls -l /tmp/tc/bin/ld* /tmp/tc/bin/aarch64-linux-gnu-ld /tmp/tc/bin/clang-22 2>/dev/null
+          ls -l /tmp/tc/bin/aarch64-linux-gnu-ld /tmp/tc/bin/clang-22 2>/dev/null || true
           /tmp/tc/bin/clang --version | head -1
 
       - name: Build Image.gz-dtb (official raphael_defconfig, clang 22)
