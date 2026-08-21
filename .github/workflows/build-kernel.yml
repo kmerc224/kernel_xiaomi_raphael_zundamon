@@ -32,7 +32,12 @@ jobs:
       - name: Build Image.gz-dtb (official raphael_defconfig, clang 22)
         run: |
           cd kernel
-          export PATH=/tmp/tc/bin:/tmp/tc/aarch64-linux-gnu/bin:/tmp/tc/arm-linux-gnueabi/bin:$PATH
+          # IMPORTANT: do NOT put /tmp/tc/bin in PATH. It contains a cross
+          # `ld`/`collect2` that shadows the system linker and breaks host
+          # tool (scripts/dtc + yamltree) linking against libyaml.
+          # Reference clang by absolute path instead; kernel links via
+          # aarch64-linux-gnu-ld (binutils in /tmp/tc/aarch64-linux-gnu/bin).
+          export PATH=/tmp/tc/aarch64-linux-gnu/bin:/tmp/tc/arm-linux-gnueabi/bin:$PATH
           export ARCH=arm64
           echo "=== Makefile version check (must be 4.14.356+, NOT the old 4.14.336) ==="
           grep -E "^(VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION)" Makefile
@@ -45,11 +50,13 @@ jobs:
           # (do NOT set HOSTCC=clang or LD=ld.lld -- that broke dtc/yamltree
           # linking against libyaml). Kernel itself links via CLANG_TRIPLE
           # -> aarch64-linux-gnu-ld (binutils present in Mandi-Sa toolchain).
-          MAKEVARS="CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
+          MAKEVARS="CC=/tmp/tc/bin/clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCC=gcc"
 
           echo "=== verify toolchain ==="
-          clang --version | head -1
+          /tmp/tc/bin/clang --version | head -1
           aarch64-linux-gnu-ld --version | head -1
+          gcc --version | head -1
+          which ld
 
           echo "=== raphael_defconfig ==="
           make O=out ARCH=arm64 $MAKEVARS raphael_defconfig 2>&1 | tail -15
