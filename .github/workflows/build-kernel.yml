@@ -1,4 +1,4 @@
-name: Build raphael kernel (LineageOS 23.2 + clang 22)
+name: Build Zundamon raphael kernel (oss-base + clang 22)
 
 on:
   workflow_dispatch:
@@ -7,19 +7,14 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout build repo (config + dtb assets)
+      - name: Checkout Zundamon kernel (oss-base = official source of working 4.14.357)
         uses: actions/checkout@v4
         with:
-          path: buildrepo
-
-      - name: Checkout LineageOS kernel (lineage-23.2, closest to working 4.14.357)
-        uses: actions/checkout@v4
-        with:
-          repository: LineageOS/android_kernel_xiaomi_sm8150
-          ref: lineage-23.2
+          repository: HeliumStudio-Dev/kernel_xiaomi_raphael
+          ref: oss-base
           path: kernel
 
-      - name: Install build deps + 7z
+      - name: Install build deps + p7zip
         run: |
           sudo apt-get update >/dev/null 2>&1 || true
           sudo apt-get install -y -o Acquire::Retries=3 bc flex bison libssl-dev libelf-dev p7zip-full >/dev/null 2>&1
@@ -34,79 +29,97 @@ jobs:
           7z x -y tc.7z -o/tmp/tc >/dev/null
           /tmp/tc/bin/clang --version | head -1
 
-      - name: Build Image.gz (bare kernel, clang 22)
+      - name: Build Image.gz-dtb (official raphael_defconfig, clang 22)
         run: |
           cd kernel
           export PATH=/tmp/tc/bin:/tmp/tc/aarch64-linux-gnu/bin:/tmp/tc/arm-linux-gnueabi/bin:$PATH
           export ARCH=arm64
 
-          # NOTE: CC/LD/etc are passed on the make COMMAND LINE (not env),
-          # because kernel Makefile sets "CC = $(CROSS_COMPILE)gcc" which would
-          # override an exported CC. Command-line vars take precedence.
+          # CC/LD passed on the make COMMAND LINE (kernel Makefile assigns
+          # "CC = $(CROSS_COMPILE)gcc", overriding an exported CC).
+          MAKEVARS="CC=clang HOSTCC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+                    OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+                    CLANG_TRIPLE=aarch64-linux-gnu- \
+                    CROSS_COMPILE=aarch64-linux-gnu- \
+                    CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
 
           echo "=== verify toolchain ==="
           clang --version | head -1
           ld.lld --version | head -1
-          aarch64-linux-gnu-as --version | head -1 || true
 
-          echo "=== import exact working config ==="
-          mkdir -p out
-          cp "$GITHUB_WORKSPACE/buildrepo/kernel_config.txt" out/.config
-          # Append board selection: MACH_XIAOMI_RAPHAEL selects MACH_XIAOMI_SM8150
-          # (which gates get_hw_version_platform/HARDWARE_PLATFORM_VAYU in socinfo.h,
-          #  needed by goodix_ta, AND makes dtbs pick the raphael board, not RUMI).
-          echo "CONFIG_MACH_XIAOMI_RAPHAEL=y" >> out/.config
-          echo "imported config lines: $(grep -c . out/.config)"
-
-          echo "=== olddefconfig ==="
-          make O=out ARCH=arm64 CC=clang HOSTCC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- olddefconfig 2>&1 | tail -15
+          echo "=== raphael_defconfig ==="
+          make O=out ARCH=arm64 $MAKEVARS raphael_defconfig 2>&1 | tail -15
 
           echo "=== verify boot-critical options ==="
-          for opt in ARCH_SM8150 MACH_XIAOMI_RAPHAEL MACH_XIAOMI_SM8150 TI_DRV8846 BPF_SYSCALL BPF_JIT_ALWAYS_ON QCOM_KGSL DRM_MSM LOCALVERSION IKCONFIG; do
+          for opt in ARCH_SM8150 MACH_XIAOMI_RAPHAEL MACH_XIAOMI_SM8150 TI_DRV8846 \
+                     TOUCHSCREEN_GOODIX_GTX8 FINGERPRINT_GOODIX_TA FPR_FPC \
+                     BUILD_ARM64_APPENDED_DTB_IMAGE BUILD_ARM64_DT_OVERLAY \
+                     LOCALVERSION; do
             grep "CONFIG_${opt}=" out/.config | sed 's/^/  /'
           done
 
-          echo "=== build Image.gz ==="
-          if ! make O=out ARCH=arm64 \
-              CC=clang HOSTCC=clang \
-              LD=ld.lld AR=llvm-ar NM=llvm-nm \
-              OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-              CLANG_TRIPLE=aarch64-linux-gnu- \
-              CROSS_COMPILE=aarch64-linux-gnu- \
-              CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-              -j$(nproc) Image.gz \
+          echo "=== build Image.gz-dtb (appends correct raphael/sm8150-v2 dtb) ==="
+          if ! make O=out ARCH=arm64 $MAKEVARS -j$(nproc) Image.gz-dtb \
               KCFLAGS="-Wno-error" > build.log 2>&1; then
             echo "=== BUILD FAILED - error lines ==="
-            grep -n -E "error:|Error [0-9]+|undefined reference|No rule to make|fatal error|No such file|collect2|ld:" build.log | tail -80 || true
-            echo ""
-            echo "=== context around first error ==="
+            grep -n -E "error:|Error [0-9]+|undefined reference|No rule to make|fatal error|No such file" build.log | tail -80 || true
             LINE=$(grep -nE "Error [0-9]+|error:" build.log | head -1 | cut -d: -f1)
             if [ -n "$LINE" ]; then
-              START=$((LINE-50)); [ $START -lt 1 ] && START=1
+              START=$((LINE-40)); [ $START -lt 1 ] && START=1
               sed -n "${START},$((LINE+6))p" build.log
             else
-              tail -120 build.log
+              tail -100 build.log
             fi
             exit 1
           fi
+          echo "=== build done ==="
           tail -15 build.log
 
+          echo "=== dtb files built ==="
+          ls -lh out/arch/arm64/boot/dts/qcom/*.dtb 2>/dev/null | sed 's/^/  /' || true
+          ls -lh out/arch/arm64/boot/dts/qcom/*.dtbo 2>/dev/null | sed 's/^/  /' || true
+
+          echo "=== verify appended dtb inside Image.gz-dtb is NOT rumi ==="
+          python3 - <<'PY'
+  import struct, re
+  d = open('out/arch/arm64/boot/Image.gz-dtb','rb').read()
+  idx = d.rfind(b'\xd0\x0d\xfe\xed')
+  print('  appended FDT magic offset:', idx, 'of', len(d))
+  if idx >= 0:
+      totalsize = struct.unpack_from('>I', d, idx+4)[0]
+      dtb = d[idx:idx+totalsize]
+      low = dtb.lower()
+      is_rumi = b'rumi' in low
+      has_v2 = b'sm8150-v2' in low or b'sm8150 v2' in low
+      has_sm8150 = b'sm8150' in low
+      print('  dtb totalsize:', totalsize)
+      print('  contains "rumi":', is_rumi)
+      print('  contains sm8150-v2:', has_v2)
+      print('  contains sm8150:', has_sm8150)
+      if is_rumi:
+          print('  *** WARN: appended dtb is RUMI emulation board ***')
+      else:
+          print('  OK: appended dtb is a real platform (not RUMI)')
+      # print board-ish strings
+      strs = set(re.findall(rb'[\x20-\x7e]{6,}', dtb))
+      for s in sorted(strs):
+          t = s.decode(errors='replace')
+          if any(k in t.lower() for k in ['sm8150','rumi','mtp','xiaomi','raphael','v2']):
+              print('   ', t)
+  PY
+
           echo "=== result ==="
-          ls -lh out/arch/arm64/boot/Image out/arch/arm64/boot/Image.gz 2>/dev/null || true
-          if [ -f out/arch/arm64/boot/Image.gz ]; then
-            echo "OK: Image.gz built"
-            strings out/arch/arm64/boot/Image 2>/dev/null | grep -m1 "Linux version" || true
-          else
-            echo "FAIL"
-            exit 1
-          fi
+          ls -lh out/arch/arm64/boot/Image out/arch/arm64/boot/Image.gz out/arch/arm64/boot/Image.gz-dtb 2>/dev/null | sed 's/^/  /' || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-raphael-los23-clang22
+          name: kernel-zundamon-oss-base-clang22
           path: |
+            kernel/out/arch/arm64/boot/Image.gz-dtb
             kernel/out/arch/arm64/boot/Image.gz
             kernel/out/arch/arm64/boot/Image
+            kernel/out/arch/arm64/boot/dts/qcom/*.dtb
+            kernel/out/arch/arm64/boot/dts/qcom/*.dtbo
             kernel/build.log
             kernel/out/.config
