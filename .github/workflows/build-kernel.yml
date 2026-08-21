@@ -17,7 +17,7 @@ jobs:
       - name: Install build deps + p7zip
         run: |
           sudo apt-get update >/dev/null 2>&1 || true
-          sudo apt-get install -y -o Acquire::Retries=3 bc flex bison libssl-dev libelf-dev p7zip-full >/dev/null 2>&1
+          sudo apt-get install -y -o Acquire::Retries=3 bc flex bison libssl-dev libelf-dev libyaml-dev p7zip-full >/dev/null 2>&1
           echo "deps ok"
 
       - name: Download Mandi-Sa clang 22 toolchain
@@ -34,11 +34,17 @@ jobs:
           cd kernel
           export PATH=/tmp/tc/bin:/tmp/tc/aarch64-linux-gnu/bin:/tmp/tc/arm-linux-gnueabi/bin:$PATH
           export ARCH=arm64
-          MAKEVARS="CC=clang HOSTCC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
+          # CC=clang on the command line only (kernel Makefile assigns
+          # "CC = $(CROSS_COMPILE)gcc" which overrides an exported CC).
+          # Host tools (scripts/dtc, kconfig) must use the DEFAULT host gcc
+          # (do NOT set HOSTCC=clang or LD=ld.lld -- that broke dtc/yamltree
+          # linking against libyaml). Kernel itself links via CLANG_TRIPLE
+          # -> aarch64-linux-gnu-ld (binutils present in Mandi-Sa toolchain).
+          MAKEVARS="CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
 
           echo "=== verify toolchain ==="
           clang --version | head -1
-          ld.lld --version | head -1
+          aarch64-linux-gnu-ld --version | head -1
 
           echo "=== raphael_defconfig ==="
           make O=out ARCH=arm64 $MAKEVARS raphael_defconfig 2>&1 | tail -15
