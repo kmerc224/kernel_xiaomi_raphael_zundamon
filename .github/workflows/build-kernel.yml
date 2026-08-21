@@ -34,6 +34,11 @@ jobs:
           cd kernel
           export PATH=/tmp/tc/bin:/tmp/tc/aarch64-linux-gnu/bin:/tmp/tc/arm-linux-gnueabi/bin:$PATH
           export ARCH=arm64
+          echo "=== Makefile version check (must be 4.14.356+, NOT the old 4.14.336) ==="
+          grep -E "^(VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION)" Makefile
+          KVER=$(awk '/^SUBLEVEL/{print $3; exit}' Makefile)
+          if [ -z "$KVER" ] || [ "$KVER" -lt 356 ]; then echo "ERROR: SUBLEVEL=$KVER too old"; exit 1; fi
+          echo "makefile_version_ok SUBLEVEL=$KVER"
           # CC=clang on the command line only (kernel Makefile assigns
           # "CC = $(CROSS_COMPILE)gcc" which overrides an exported CC).
           # Host tools (scripts/dtc, kconfig) must use the DEFAULT host gcc
@@ -63,6 +68,12 @@ jobs:
           fi
           echo "=== build done ==="
           tail -15 build.log
+
+          echo "=== verify built kernel version (must be >= 4.14.356, NOT 4.14.336) ==="
+          gzip -dc out/arch/arm64/boot/Image.gz-dtb 2>/dev/null | strings | grep -m1 "Linux version" > /tmp/kver.txt || true
+          cat /tmp/kver.txt
+          grep -qE "4\.14\.[3-9][5-9][0-9]" /tmp/kver.txt || { echo "ERROR: built kernel version too old"; exit 1; }
+          echo "  version_check_ok"
 
           echo "=== dtb/dtbo files built ==="
           ls -lh out/arch/arm64/boot/dts/qcom/*.dtb 2>/dev/null | sed 's/^/  /' || true
