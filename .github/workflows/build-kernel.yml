@@ -27,17 +27,23 @@ jobs:
           curl -sSL --retry 3 -o tc.7z "https://github.com/Mandi-Sa/clang/releases/download/amd64-kernel-arm_static-22/llvm22.0.0-binutils2.45.1_amd64-kernel-arm_static-20260111.7z"
           ls -lh tc.7z
           7z x -y tc.7z -o/tmp/tc >/dev/null
+          # The toolchain ships a bare host `ld`/`ld.bfd`/`ld.lld` in bin/ that
+          # does not include Debian multilib paths (/usr/lib/x86_64-linux-gnu),
+          # so it shadows the system linker and breaks host dtc/yamltree linking
+          # (-lyaml -> "undefined reference to yaml_*"). Delete ONLY the bare
+          # host linkers; KEEP aarch64-linux-gnu-ld (cross) + clang + clang-22.
+          rm -f /tmp/tc/bin/ld /tmp/tc/bin/ld.bfd /tmp/tc/bin/ld.lld /tmp/tc/bin/ld64.lld
+          ls -l /tmp/tc/bin/ld* /tmp/tc/bin/aarch64-linux-gnu-ld /tmp/tc/bin/clang-22 2>/dev/null
           /tmp/tc/bin/clang --version | head -1
 
       - name: Build Image.gz-dtb (official raphael_defconfig, clang 22)
         run: |
           cd kernel
-          # IMPORTANT: do NOT put /tmp/tc/bin in PATH. It contains a cross
-          # `ld`/`collect2` that shadows the system linker and breaks host
-          # tool (scripts/dtc + yamltree) linking against libyaml.
-          # Reference clang by absolute path instead; kernel links via
-          # aarch64-linux-gnu-ld (binutils in /tmp/tc/aarch64-linux-gnu/bin).
-          export PATH=/tmp/tc/aarch64-linux-gnu/bin:/tmp/tc/arm-linux-gnueabi/bin:$PATH
+          # Bare host `ld` was removed from /tmp/tc/bin above, so it is now SAFE
+          # to put /tmp/tc/bin back on PATH: host tools (scripts/dtc) use the
+          # system gcc -> system /usr/bin/ld, while the kernel links via
+          # aarch64-linux-gnu-ld (cross, still in /tmp/tc/bin).
+          export PATH=/tmp/tc/bin:/tmp/tc/aarch64-linux-gnu/bin:/tmp/tc/arm-linux-gnueabi/bin:$PATH
           export ARCH=arm64
           echo "=== Makefile version check (must be 4.14.356+, NOT the old 4.14.336) ==="
           grep -E "^(VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION)" Makefile
