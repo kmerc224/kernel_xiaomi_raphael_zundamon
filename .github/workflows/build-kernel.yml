@@ -16,9 +16,12 @@ jobs:
 
       - name: Install build deps + p7zip
         run: |
-          sudo apt-get update >/dev/null 2>&1 || true
-          sudo apt-get install -y -o Acquire::Retries=3 bc flex bison libssl-dev libelf-dev libyaml-dev p7zip-full >/dev/null 2>&1
+          sudo apt-get update
+          sudo apt-get install -y -o Acquire::Retries=3 bc flex bison libssl-dev libelf-dev libyaml-dev pkg-config p7zip-full
           echo "deps ok"
+          echo "=== verify libyaml (if present, dtc skips yamltree and links cleanly) ==="
+          pkg-config --modversion yaml-0.1 && echo "  yaml-0.1 OK" || echo "  yaml-0.1 MISSING"
+          pkg-config --exists yaml-0.1 && echo "  yaml detected -> yamltree.o skipped" || echo "  yaml NOT detected"
 
       - name: Download Mandi-Sa clang 22 toolchain
         timeout-minutes: 10
