@@ -51,13 +51,15 @@ jobs:
           # system gcc -> system /usr/bin/ld (supports elf_x86_64 + libyaml).
           export PATH=/tmp/tc/bin:$PATH
           export ARCH=arm64
-          # The dtc/Makefile has an INVERTED yaml check: it compiles yamltree.o
-          # ONLY when libyaml is ABSENT (but then -lyaml is empty -> link fails).
-          # Kernel build never needs dtc's yaml output, so disable it entirely.
-          sed -i -e 's/^dtc-objs[[:space:]]*+= yamltree\.o/# &/' \
-                 -e 's/^HOSTLDLIBS_dtc[[:space:]]*:=/# &/' scripts/dtc/Makefile
-          echo "=== patched dtc Makefile (yamltree disabled) ==="
-          grep -n -E "yamltree|HOSTLDLIBS_dtc" scripts/dtc/Makefile
+          # dtc.c calls dt_to_yaml() only when NO_YAML is NOT defined. The
+          # yaml branch of scripts/dtc/Makefile is broken here because it sets
+          # HOSTLDLIBS_dtc, but scripts/Makefile.host links host tools with
+          # HOSTLOADLIBES_$(@F) (name mismatch) -> -lyaml never applied ->
+          # "undefined reference to yaml_*". Kernel build does NOT need dtc's
+          # yaml output, so force the NO_YAML branch (official "no yaml" path).
+          sed -i -e 's/^ifeq (.*yaml-0.1.*$/ifeq (1,1)/' scripts/dtc/Makefile
+          echo "=== patched dtc Makefile ==="
+          grep -n -E "yamltree|HOSTLDLIBS_dtc|NO_YAML|ifeq \(1,1\)" scripts/dtc/Makefile
           echo "=== Makefile version check (must be 4.14.356+, NOT the old 4.14.336) ==="
           grep -E "^(VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION)" Makefile
           KVER=$(awk '/^SUBLEVEL/{print $3; exit}' Makefile)
