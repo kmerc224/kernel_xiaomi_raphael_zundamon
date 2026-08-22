@@ -51,6 +51,13 @@ jobs:
           # system gcc -> system /usr/bin/ld (supports elf_x86_64 + libyaml).
           export PATH=/tmp/tc/bin:$PATH
           export ARCH=arm64
+          # The dtc/Makefile has an INVERTED yaml check: it compiles yamltree.o
+          # ONLY when libyaml is ABSENT (but then -lyaml is empty -> link fails).
+          # Kernel build never needs dtc's yaml output, so disable it entirely.
+          sed -i -e 's/^dtc-objs[[:space:]]*+= yamltree\.o/# &/' \
+                 -e 's/^HOSTLDLIBS_dtc[[:space:]]*:=/# &/' scripts/dtc/Makefile
+          echo "=== patched dtc Makefile (yamltree disabled) ==="
+          grep -n -E "yamltree|HOSTLDLIBS_dtc" scripts/dtc/Makefile
           echo "=== Makefile version check (must be 4.14.356+, NOT the old 4.14.336) ==="
           grep -E "^(VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION)" Makefile
           KVER=$(awk '/^SUBLEVEL/{print $3; exit}' Makefile)
